@@ -6,7 +6,7 @@
 var botTex          = 'data:image/gif;base64,R0lGODlhDwAPAKECAAAAzMzM/////wAAACwAAAAADwAPAAACIISPeQHsrZ5ModrLlN48CXF8m2iQ3YmmKqVlRtW4MLwWACH+H09wdGltaXplZCBieSBVbGVhZCBTbWFydFNhdmVyIQAAOw==',
     renderer        = PIXI.autoDetectRenderer(256, 256, {antialias: false, transparent: false, resolution: 1}),
     stage,
-    botInitCount    = 100,
+    botInitCount    = 30,
     botDefaultSpeed = 5,
     angleVariance   = 30, // in degrees,
     lookAhead       = 10,  // multiple
@@ -32,7 +32,6 @@ function init () {
         [renderer.width - boundaryPadding, renderer.height - boundaryPadding],
         [boundaryPadding, renderer.height - boundaryPadding]
     ];
-
     boundaries.push(stageBoundaries);
 
     //Add the canvas to the HTML document
@@ -132,9 +131,76 @@ function checkBoundaries (curVector, newVector) {
 function setup () {
 
     setupTextures();
+    addRandomObstacles();
+    drawBoundaries();
     addBots();
     animateBots();
 
+}
+
+function addRandomObstacles() {
+    var maxSize     = 300,
+        minSize     = 150,
+        maxVectors  = 8,
+        minVectors  = 2,
+        maxObsCount = 6,
+        minObsCount = 1,
+
+        obsCount = ~~(Math.random() * (maxObsCount - minObsCount) + minObsCount);
+    // go through each obstacle
+    for (var i = 0; i < obsCount; i++) {
+        var randX = ~~(Math.random() * renderer.width),
+            randY = ~~(Math.random() * renderer.height),
+            obsSize = ~~(Math.random() * (maxSize - minSize) + minSize),
+            obsVectors = ~~(Math.random() * (maxVectors - minVectors) + minVectors),
+            obs = [];
+
+        //// adjust location to be all inside view ////
+        if (randX - (obsSize / 2) < 0)
+            randX += (obsSize / 2 - randX);
+
+        if (randX + (obsSize / 2) > renderer.width)
+            randX -= randX + (obsSize / 2) - renderer.width;
+
+        if (randY - (obsSize / 2) < 0)
+            randY += (obsSize / 2 - randY);
+
+        if (randY + (obsSize / 2) > renderer.height)
+            randY -= randY + (obsSize / 2) - renderer.height;
+        ////////////////////////////////////////////////
+
+        // generate all the vectors for this obstacle
+        for (var v = 0; v < obsVectors; v++){
+            obs.push(getVector({x: randX, y: randY}, (360 / obsVectors) * (v + 1), obsSize/2, true));
+        }
+
+        boundaries.push(obs);
+    }
+
+}
+
+function addObstacles() {
+
+    boundaries.push([
+        [50, 50],
+        [150, 50],
+        [150, 150],
+        [50, 150]
+    ]);
+
+    boundaries.push([
+        [350, 350],
+        [450, 350],
+        [450, 450],
+        [350, 450]
+    ]);
+
+    boundaries.push([
+        [650, 50],
+        [750, 50],
+        [750, 150],
+        [650, 150]
+    ]);
 }
 
 function animateBots () {
@@ -160,15 +226,19 @@ function updateBotPos () {
         okToMove = checkBoundaries({x: bots[i].x, y: bots[i].y}, newVector);
 
         if (!okToMove) { // reverse the direction
-            randAngle = (randAngle + 90) % 360;
+            randAngle = (randAngle + 140) % 360;
             newVector = getVector({x: bots[i].x, y: bots[i].y}, randAngle);
+            // check again
+            okToMove = checkBoundaries({x: bots[i].x, y: bots[i].y}, newVector);
         }
 
-        bots[i].prevAngle = randAngle;
-        bots[i].prevX     = bots[i].x;
-        bots[i].prevY     = bots[i].y;
-        bots[i].x         = newVector[0];
-        bots[i].y         = newVector[1];
+        if(okToMove){
+            bots[i].prevAngle = randAngle;
+            bots[i].prevX     = bots[i].x;
+            bots[i].prevY     = bots[i].y;
+            bots[i].x         = newVector[0];
+            bots[i].y         = newVector[1];
+        }
 
         //updateDirectionLine(i);
     }
@@ -202,6 +272,24 @@ function addDirectionLine (sprite) {
 
     stage.addChild(line);
 
+}
+
+function drawBoundaries() {
+    var line = new PIXI.Graphics();
+    line.lineStyle(4, 0xEEEEEE, 1);
+    for (var b = 0; b < boundaries.length; b++){
+
+        for (var i = 0; i <= boundaries[b].length; i++) {
+            if(i === 0){
+                line.moveTo(boundaries[b][i][0], boundaries[b][i][1]);
+            } else {
+                line.lineTo(boundaries[b][i % boundaries[b].length][0], boundaries[b][i % boundaries[b].length][1]);
+            }
+
+        }
+        stage.addChild(line);
+
+    }
 }
 
 function randomDir (prevAngle) {
@@ -244,22 +332,20 @@ function makeBot (texture) {
     //addDirectionLine(sprite);
 }
 
-function getVector (coord, angle, speed) {
-    var vector = {};
+function getVector (coord, angle, speed, noLookAhead) {
+    var vector = {}, result = [];
     speed = typeof speed !== 'undefined' ? speed : botDefaultSpeed;
     angle = angle * Math.PI / 180; // if you're using degrees instead of radians
 
-    vector.x = speed * Math.cos(angle) + coord.x;
-    vector.y = speed * Math.sin(angle) + coord.y;
+    result.push(speed * Math.cos(angle) + coord.x);
+    result.push(speed * Math.sin(angle) + coord.y);
 
-    vector.lookAheadX = (speed * lookAhead) * Math.cos(angle) + coord.x;
-    vector.lookAheadY = (speed * lookAhead) * Math.sin(angle) + coord.y;
+    if(!noLookAhead) {
+        result.push((speed * lookAhead) * Math.cos(angle) + coord.x);
+        result.push((speed * lookAhead) * Math.sin(angle) + coord.y);
+    }
 
-    return [
-        vector.x,
-        vector.y,
-        vector.lookAheadX,
-        vector.lookAheadY];
+    return result;
 }
 
 
