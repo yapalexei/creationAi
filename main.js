@@ -6,17 +6,18 @@
 var botTex          = 'data:image/gif;base64,R0lGODlhDwAPAKECAAAAzMzM/////wAAACwAAAAADwAPAAACIISPeQHsrZ5ModrLlN48CXF8m2iQ3YmmKqVlRtW4MLwWACH+H09wdGltaXplZCBieSBVbGVhZCBTbWFydFNhdmVyIQAAOw==',
     renderer        = PIXI.autoDetectRenderer(256, 256, {antialias: false, transparent: false, resolution: 1}),
     stage,
-    botInitCount    = 30,
-    botDefaultSpeed = 5,
-    angleVariance   = 30, // in degrees,
+    botInitCount    = 50,
+    botDefaultSpeed = 3,
+    angleVariance   = 40, // in degrees,
     lookAhead       = 10,  // multiple
     textures        = [],
     bots            = [],
     lines           = [],
     stageBoundaries,
-    creationBoundaryPadding = 0.9,
+    creationBoundaryPadding = 1,
     boundaries      = [],
-    boundaryPadding = 10;
+    boundaryPadding = 1,
+    gravity         = 1;
 
 init();
 
@@ -131,7 +132,7 @@ function checkBoundaries (curVector, newVector) {
 function setup () {
 
     setupTextures();
-    addRandomObstacles();
+    //addRandomObstacles();
     drawBoundaries();
     addBots();
     animateBots();
@@ -221,13 +222,22 @@ function updateBotPos () {
     for (var i = 0; i < bots.length; i++) {
         var randAngle = randomDir(bots[i].prevAngle),
             newVector = getVector({x: bots[i].x, y: bots[i].y}, randAngle),
-            okToMove;
+            okToMove,
+            collision;
 
         okToMove = checkBoundaries({x: bots[i].x, y: bots[i].y}, newVector);
 
         if (!okToMove) { // reverse the direction
-            randAngle = (randAngle + 140) % 360;
-            newVector = getVector({x: bots[i].x, y: bots[i].y}, randAngle);
+            randAngle = (randAngle + 180) % 360;
+            newVector = getVector({x: bots[i].x, y: bots[i].y}, randAngle, 1);
+            // check again
+            okToMove = checkBoundaries({x: bots[i].x, y: bots[i].y}, newVector);
+        }
+
+        collision = checkForCollisions(bots[i], i);
+
+        if (collision.collided) { // reverse the direction
+            newVector = getVector({x: bots[i].x, y: bots[i].y}, collision.angle, 1);
             // check again
             okToMove = checkBoundaries({x: bots[i].x, y: bots[i].y}, newVector);
         }
@@ -237,12 +247,31 @@ function updateBotPos () {
             bots[i].prevX     = bots[i].x;
             bots[i].prevY     = bots[i].y;
             bots[i].x         = newVector[0];
-            bots[i].y         = newVector[1];
+            bots[i].y         = newVector[1] * gravity;
         }
 
         //updateDirectionLine(i);
     }
 
+}
+
+function checkForCollisions(bot, botsI) {
+    var min = 20,
+        collision = {
+            collided: false,
+            angle: undefined
+        };
+    for (var i = 0; i < bots.length; i++){
+        if(botsI !== i){
+            debugger;
+            if(Math.abs(bot.x - bots[i].x) < min && Math.abs(bot.y - bots[i].y) < min) {
+                collision.collided = true;
+                collision.angle = Math.atan2(bot.y - bots[i].y, bot.x - bots[i].x) * 180 / Math.PI;
+                break;
+            }
+        }
+    }
+    return collision;
 }
 
 function updateDirectionLine (i) {
@@ -338,7 +367,7 @@ function getVector (coord, angle, speed, noLookAhead) {
     angle = angle * Math.PI / 180; // if you're using degrees instead of radians
 
     result.push(speed * Math.cos(angle) + coord.x);
-    result.push(speed * Math.sin(angle) + coord.y);
+    result.push((speed * Math.sin(angle) + coord.y) * gravity);
 
     if(!noLookAhead) {
         result.push((speed * lookAhead) * Math.cos(angle) + coord.x);
