@@ -7,17 +7,14 @@ var botTex         = [
     'assets/images/blu.gif',
     'assets/images/pnk.gif',
     'assets/images/red.gif',
-    'assets/images/ylw.gif'
+    'assets/images/ylw.gif',
+    'data:image/gif;base64,R0lGODlhDwAPAKECAAAAzMzM/////wAAACwAAAAADwAPAAACIISPeQHsrZ5ModrLlN48CXF8m2iQ3YmmKqVlRtW4MLwWACH+H09wdGltaXplZCBieSBVbGVhZCBTbWFydFNhdmVyIQAAOw=='
     ],
-    botTex2         = 'assets/images/pnk.gif',
-    botTex3         = 'assets/images/red.gif',
-    botTex4         = 'assets/images/ylw.gif',
-    botTex5          = 'data:image/gif;base64,R0lGODlhDwAPAKECAAAAzMzM/////wAAACwAAAAADwAPAAACIISPeQHsrZ5ModrLlN48CXF8m2iQ3YmmKqVlRtW4MLwWACH+H09wdGltaXplZCBieSBVbGVhZCBTbWFydFNhdmVyIQAAOw==',
-    renderer        = PIXI.autoDetectRenderer(256, 256, {antialias: false, transparent: false, resolution: 1}),
+    renderer        = PIXI.autoDetectRenderer(512, 512, {antialias: false, transparent: false, resolution: 1}),
     stage,
-    botInitCount    = 200,
-    botDefaultSpeed = 3,
-    angleVariance   = 40, // in degrees,
+    botInitCount    = 15,
+    botDefaultSpeed = 5,
+    angleVariance   = 10,  // in degrees,
     lookAhead       = 10,  // multiple
     textures        = [],
     bots            = [],
@@ -215,11 +212,13 @@ function addObstacles() {
 
 function animateBots () {
 
-    //Loop this function 60 times per second
-    requestAnimationFrame(animateBots);
-
     //Move the cat 1 pixel per frame
     updateBotPos();
+    //Loop this function 60 times per second
+    //setTimeout(function() {
+        requestAnimationFrame(animateBots);
+    //}, 100);
+
 
     //Render the stage
     renderer.render(stage);
@@ -231,7 +230,7 @@ function updateBotPos () {
     // for every bot check the status and update positions
     // as long as they do not collide with something or someone.
     for (var i = 0; i < bots.length; i++) {
-        var randAngle = getRandomDir(bots[i].prevAngle),
+        var randAngle = bots[i].curAngle === bots[i].prevAngle ? getRandomDir() : getRandomDir(bots[i].curAngle),
             newVector = getVector({x: bots[i].x, y: bots[i].y}, randAngle),
             okToMove,
             collision;
@@ -248,20 +247,31 @@ function updateBotPos () {
         collision = checkForCollisions(bots[i], i);
 
         if (collision.collided) { // one more chance to reverse the direction
-            newVector = getVector({x: bots[i].x, y: bots[i].y}, collision.angle, 1);
+            //console.log('botClass:', bots[i].botClass, 'at', bots[i].x, bots[i].y, 'collided at: ', collision.with.curAngle, collision);
+            //debugger;
+            //randAngle = (randAngle + 180) % 360;
+            randAngle = (collision.angle - randAngle) <= angleVariance ? collision.angle : randAngle;
+            newVector = getVector({x: bots[i].x, y: bots[i].y}, collision.angle, botDefaultSpeed);
             // check again
             okToMove = checkBoundaries({x: bots[i].x, y: bots[i].y}, newVector);
         }
 
         if(okToMove){
-            bots[i].prevAngle = randAngle;
+            bots[i].prevAngle = bots[i].curAngle;
+            bots[i].curAngle  = randAngle;
             bots[i].prevX     = bots[i].x;
             bots[i].prevY     = bots[i].y;
             bots[i].x         = newVector[0];
             bots[i].y         = newVector[1];
         }
 
-        //updateDirectionLine(i);
+        //if(Math.abs(bots[i].curAngle - bots[i].prevAngle) > angleVariance){
+        //    console.log(bots[i].prevAngle, bots[i].curAngle, Math.abs(bots[i].curAngle) + Math.abs(bots[i].prevAngle));
+        //    debugger;
+        //}
+
+
+        updateDirectionLine(i);
     }
 
 }
@@ -271,13 +281,16 @@ function checkForCollisions(bot, botsI) {
     var min = 20,
         collision = {
             collided: false,
-            angle: undefined
+            angle: undefined,
+            with: undefined
         };
     for (var i = 0; i < bots.length; i++){
         if(botsI !== i){
             if(Math.abs(bot.x - bots[i].x) < min && Math.abs(bot.y - bots[i].y) < min) {
                 collision.collided = true;
-                collision.angle = Math.atan2(bot.y - bots[i].y, bot.x - bots[i].x) * 180 / Math.PI;
+                collision.angleOfObsticle = ((Math.atan2(bot.y - bots[i].y, bot.x - bots[i].x) * 180 / Math.PI) + 180) % 360;
+                collision.angle = (bot.curAngle - (collision.angleOfObsticle - bot.curAngle)) % 360;
+                collision.with = bots[i];
                 break;
             }
         }
@@ -287,11 +300,14 @@ function checkForCollisions(bot, botsI) {
 
 function updateDirectionLine (i) {
     var vector = {};
-    vector.x   = 10 * Math.cos(bots[i].prevAngle);
-    vector.y   = 10 * Math.sin(bots[i].prevAngle);
+    vector.x   = (30 * Math.cos(bots[i].prevAngle * (Math.PI / 180)));
+    vector.y   = (30 * Math.sin(bots[i].prevAngle * (Math.PI / 180)));
 
     //console.log(vector);
-    //debugger;
+
+    lines[i].clear();
+    lines[i].lineStyle(4, 0xFFFFFF, 1);
+    lines[i].moveTo(0, 0);
     lines[i].lineTo(vector.x, vector.y);
     //lines[i].lineTo(bots[i].x, bots[i].x);
     lines[i].x = bots[i].x;
@@ -305,7 +321,7 @@ function addDirectionLine (sprite) {
 
     line.lineStyle(4, 0xFFFFFF, 1);
     line.moveTo(0, 0);
-    line.lineTo(10, 10);
+
     line.x   = sprite.x;
     line.y   = sprite.y;
     lines.push(line);
@@ -332,13 +348,14 @@ function drawBoundaries() {
     }
 }
 
-function getRandomDir (prevAngle) {
+function getRandomDir (angle) {
     var adjustAngle;
 
-    prevAngle   = typeof prevAngle !== 'undefined' ? prevAngle : 0;
-    adjustAngle = (Math.random() - 0.5) * angleVariance;
-
-    return prevAngle + adjustAngle;
+    angle   = typeof angle !== 'undefined' ? angle : Math.random() * 360;               // -0.5 * 10 = -5deg + 45deg = 40deg
+    adjustAngle = (Math.random() - 0.5) * angleVariance;              //  0.5 * 10 =  5deg + 45deg = 50deg
+    angle += adjustAngle;
+    //console.log(angle);
+    return angle;
 }
 
 function setupTextures () {
@@ -365,26 +382,26 @@ function makeBot (texture, botClass) {
     sprite.anchor.set(0.5, 0.5);
     sprite.position.set(newPos.x, newPos.y);
 
-    sprite.prevX = newPos.x - 10;
-    sprite.prevY = newPos.y - 10;
+    sprite.prevX = renderer.with/2;    //newPos.x - 10;
+    sprite.prevY = renderer.height/2;  //newPos.y - 10;
     bots.push(sprite);
 
     stage.addChild(sprite);
 
-    //addDirectionLine(sprite);
+    addDirectionLine(sprite);
 }
 
 function getVector (coord, angle, speed, noLookAhead) {
     var result = [];
     speed = typeof speed !== 'undefined' ? speed : botDefaultSpeed;
-    angle = angle * Math.PI / 180; // if you're using degrees instead of radians
+    //angle = angle * Math.PI / 180; // if you're using degrees instead of radians
 
-    result.push(speed * Math.cos(angle) + coord.x);
-    result.push((speed * Math.sin(angle) + coord.y) * gravity);
+    result.push(speed * Math.cos(angle * (Math.PI / 180)) + coord.x);
+    result.push((speed * Math.sin(angle * (Math.PI / 180)) + coord.y) * gravity);
 
     if(!noLookAhead) {
-        result.push((speed * lookAhead) * Math.cos(angle) + coord.x);
-        result.push((speed * lookAhead) * Math.sin(angle) + coord.y);
+        result.push((speed * lookAhead) * Math.cos(angle * (Math.PI / 180)) + coord.x);
+        result.push((speed * lookAhead) * Math.sin(angle * (Math.PI / 180)) + coord.y);
     }
 
     return result;
