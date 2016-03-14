@@ -1,0 +1,22 @@
+{
+  "name": "creation-app",
+  "version": "1.0.0",
+  "description": "ai testing",
+  "main": "server.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yapalexei/creationAi.git"
+  },
+  "author": "Alexei Yagolnikov",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/yapalexei/creationAi/issues"
+  },
+  "homepage": "https://github.com/yapalexei/creationAi#readme",
+  "devDependencies": {
+    "opener": "^1.4.1"
+  }
+}

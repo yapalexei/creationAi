@@ -1,5 +1,11 @@
 /**
  * Created by afront on 1/17/16.
+ *
+ * Hints:
+ *
+ * radians = degrees * (pi/180)
+ * degrees = radians * (180/pi)
+ *
  */
 
 //Create the renderer
@@ -12,18 +18,28 @@ var botTex         = [
     ],
     renderer        = PIXI.autoDetectRenderer(512, 512, {antialias: false, transparent: false, resolution: 1}),
     stage,
-    botInitCount    = 15,
-    botDefaultSpeed = 5,
+    botInitCount    = 1,
+    botDefaultSpeed = 2,
     angleVariance   = 10,  // in degrees,
-    lookAhead       = 10,  // multiple
+    lookAhead       = 100,  // multiple
     textures        = [],
     bots            = [],
+    obstacleCenters = [],
     lines           = [],
+    stats           = {},
     stageBoundaries,
     creationBoundaryPadding = 1,
     boundaries      = [],
     boundaryPadding = 1,
-    gravity         = 1;
+    gravity         = 1,
+    // obstacle params
+    enableObstacles = true,
+    maxSize     = 200,
+    minSize     = 150,
+    maxVectors  = 8,
+    minVectors  = 3,
+    maxObsCount = 6,
+    minObsCount = 6;
 
 init();
 
@@ -52,11 +68,13 @@ function init () {
 
 function checkSegmentedBoundary (curVector, newVector, boundary) {
     var bSegment = [].concat.apply([], boundary),
-        okToMove = true;
+        data = [],
+        preBounce,
+        afterBounce;
 
     if (bSegment.length % 2 === 0 && bSegment.length >= 4) {
         for (var i = 0; i <= bSegment.length; i += 2) {
-            okToMove = !lineIntersect(
+            data = lineIntersect(
                 curVector.x,
                 curVector.y,
                 newVector[2],
@@ -67,14 +85,33 @@ function checkSegmentedBoundary (curVector, newVector, boundary) {
                 bSegment[(i + 3) % bSegment.length]
             );
 
-            if (!okToMove) {
-                //debugger;
+            if (data) {
+
+                preBounce =
+                    Math.abs(
+                        Math.atan2(data[5] - data[7], data[4] - data[6]) * 180 / Math.PI -
+                        Math.atan2(data[1] - data[3], data[0] - data[2]) * 180 / Math.PI
+                    );
+                //preBounce =
+                //    Math.abs(Math.atan2(data[1] - data[3], data[0] - data[2]) * 180 / Math.PI -
+                //    Math.atan2(data[5] - data[7], data[4] - data[6]) * 180 / Math.PI);
+
+                if(preBounce > 90) {
+                    afterBounce = (preBounce % 90)*2
+                } else {
+                    afterBounce = -(90-preBounce)*2
+                }
+                //afterBounce = preBounce;
+
+
+                data.push(afterBounce);
                 break;
             }
+
         }
     }
 
-    return okToMove;
+    return data;
 }
 
 function lineIntersect (x1, y1, x2, y2, x3, y3, x4, y4) {
@@ -120,103 +157,150 @@ function lineIntersect (x1, y1, x2, y2, x3, y3, x4, y4) {
             }
         }
     }
-    return true;
+    return [x1, y1, x2, y2, x3, y3, x4, y4];
 }
 
 function checkBoundaries (curVector, newVector) {
-    var okToMove = true;
+    var data;
     for (var i = 0; i < boundaries.length; i++) {
-        okToMove = checkSegmentedBoundary(curVector, newVector, boundaries[i]);
-        if (!okToMove) {
+        data = checkSegmentedBoundary(curVector, newVector, boundaries[i]);
+        if (data) {
             break;
         }
     }
 
-    return okToMove;
+    return data;
 }
 
 function setup () {
 
     setupTextures();
-    //addRandomObstacles();
+    enableObstacles && generateObstacles();
     drawBoundaries();
     addBots();
-    animateBots();
+    if (bots.length === 1) addStats();
+    //animate();
+    renderer.render(stage);
 
 }
 
-function addRandomObstacles() {
-    var maxSize     = 300,
-        minSize     = 150,
-        maxVectors  = 8,
-        minVectors  = 2,
-        maxObsCount = 6,
-        minObsCount = 1,
+// supports only one bot
+function addStats() {
+    var angleStat = new PIXI.Text('Angle: ', {font: '24px Arial', fill: 0xff1010, align: 'center'});
+    angleStat.position = {x: 10, y: 5};
+    stage.addChild(angleStat);
 
-        obsCount = ~~(Math.random() * (maxObsCount - minObsCount) + minObsCount);
+    var positionStat = new PIXI.Text('Position: ', {font: '24px Arial', fill: 0xff1010, align: 'center'});
+    positionStat.position = {x: 10, y: 35};
+    stage.addChild(positionStat);
+
+    var lookAtStat      = new PIXI.Text('Position: ', {font: '24px Arial', fill: 0xff1010, align: 'center'});
+    lookAtStat.position = {x: 10, y: 65};
+    stage.addChild(lookAtStat);
+
+    stats = {
+        angleStat: angleStat,
+        positionStat: positionStat,
+        lookAtStat: lookAtStat
+    };
+}
+
+function updateStats() {
+    stats.angleStat.text    = 'Ang: ' + parseInt(bots[0].curAngle);
+    stats.positionStat.text = 'Pos: x:' + parseInt(bots[0].x) + ', y:' + parseInt(bots[0].y);
+    stats.lookAtStat.text = 'LookAt: x:' + parseInt(bots[0].lookAtX) + ', y:' + parseInt(bots[0].lookAtY);
+}
+
+function generateObstacle(pos, radius, points) {
+    var obs = [];
+    for (var v = 0; v < points; v++) {
+        obs.push(getVector({x: pos.x, y: pos.y}, (360 / points) * (v + 1), radius));
+    }
+    return obs;
+}
+
+function getRandomPos() {
+    return {
+        x: ~~(Math.random() * renderer.width),
+        y: ~~(Math.random() * renderer.height)
+    }
+}
+
+/**
+ * TODO: still needs work
+ * @param obsRadius
+ * @returns {{x, y}|*}
+ */
+function getRandomNonOverlappingPos(obsRadius) {
+    var pos = getRandomPos();
+
+    ////// adjust location to be all inside view ////
+    if (pos.x - obsRadius < 0)
+        pos.x += obsRadius - pos.x;
+
+    if (pos.x + obsRadius > renderer.width)
+        pos.x -= pos.x + obsRadius - renderer.width;
+
+    if (pos.y - obsRadius < 0)
+        pos.y += obsRadius - pos.y;
+
+    if (pos.y + obsRadius > renderer.height)
+        pos.y -= pos.y + obsRadius - renderer.height;
+    //////////////////////////////////////////////////
+
+    for(var i = 1; i < boundaries.length; i++) {
+        for (var ii = 0; ii < boundaries[i].length; ii++){
+            if(
+                (boundaries[i][ii][0] > (-obsRadius + pos.x)) &&
+                (boundaries[i][ii][0] < (obsRadius + pos.x)) &&
+                (boundaries[i][ii][1] > (-obsRadius + pos.y)) &&
+                (boundaries[i][ii][1] < (obsRadius + pos.y))
+            ) {
+                console.log('overlapped!');
+                boundaries[i][ii].push('0xAA1111');
+                //break;
+            }
+        }
+    }
+
+
+
+    return pos;
+}
+
+function generateObstacles(count) {
+    var obsCount = count || ~~(Math.random() * (maxObsCount - minObsCount) + minObsCount);
+
+
     // go through each obstacle
     for (var i = 0; i < obsCount; i++) {
-        var randX = ~~(Math.random() * renderer.width),
-            randY = ~~(Math.random() * renderer.height),
-            obsSize = ~~(Math.random() * (maxSize - minSize) + minSize),
-            obsVectors = ~~(Math.random() * (maxVectors - minVectors) + minVectors),
-            obs = [];
+        var obsSize = ~~(Math.random() * (maxSize - minSize) + minSize);
+        obstacleCenters.push(getRandomNonOverlappingPos(obsSize/2));
+        var obsVectorCount = ~~(Math.random() * (maxVectors - minVectors) + minVectors);
+        var obs = [];
 
-        //// adjust location to be all inside view ////
-        if (randX - (obsSize / 2) < 0)
-            randX += (obsSize / 2 - randX);
+        boundaries.push(generateObstacle(obstacleCenters[obstacleCenters.length - 1], obsSize/2, obsVectorCount));
 
-        if (randX + (obsSize / 2) > renderer.width)
-            randX -= randX + (obsSize / 2) - renderer.width;
-
-        if (randY - (obsSize / 2) < 0)
-            randY += (obsSize / 2 - randY);
-
-        if (randY + (obsSize / 2) > renderer.height)
-            randY -= randY + (obsSize / 2) - renderer.height;
-        ////////////////////////////////////////////////
-
-        // generate all the vectors for this obstacle
-        for (var v = 0; v < obsVectors; v++){
-            obs.push(getVector({x: randX, y: randY}, (360 / obsVectors) * (v + 1), obsSize/2, true));
-        }
-
-        boundaries.push(obs);
+        //// generate all the vectors for this obstacle
+        //for (var v = 0; v < obsVectorCount; v++){
+        //    obs.push(getVector({x: randX, y: randY}, (360 / obsVectorCount) * (v + 1), obsSize/2));
+        //}
+        //
+        //boundaries.push(obs);
     }
 
 }
 
-function addObstacles() {
 
-    boundaries.push([
-        [50, 50],
-        [150, 50],
-        [150, 150],
-        [50, 150]
-    ]);
+function animate () {
 
-    boundaries.push([
-        [350, 350],
-        [450, 350],
-        [450, 450],
-        [350, 450]
-    ]);
 
-    boundaries.push([
-        [650, 50],
-        [750, 50],
-        [750, 150],
-        [650, 150]
-    ]);
-}
-
-function animateBots () {
-
-    //Move the cat 1 pixel per frame
     updateBotPos();
+
+    updateStats();
     //Loop this function 60 times per second
     //setTimeout(function() {
-        requestAnimationFrame(animateBots);
+    requestAnimationFrame(animate);
     //}, 100);
 
 
@@ -232,44 +316,44 @@ function updateBotPos () {
     for (var i = 0; i < bots.length; i++) {
         var randAngle = bots[i].curAngle === bots[i].prevAngle ? getRandomDir() : getRandomDir(bots[i].curAngle),
             newVector = getVector({x: bots[i].x, y: bots[i].y}, randAngle),
-            okToMove,
+            newAngle,
+            data,
             collision;
 
-        okToMove = checkBoundaries({x: bots[i].x, y: bots[i].y}, newVector);
+        data = checkBoundaries({x: bots[i].x, y: bots[i].y}, newVector);
 
-        if (!okToMove) { // one more chance to reverse the direction
-            randAngle = (randAngle + 180) % 360;
+        if (data) { // one more chance to reverse the direction
+
+            //newAngle = ((bots[i].curAngle + 180) % 360) + data[8];
+            newAngle = (bots[i].curAngle + 180) % 360;
+
+            randAngle = newAngle;
             newVector = getVector({x: bots[i].x, y: bots[i].y}, randAngle, 1);
             // check again
-            okToMove = checkBoundaries({x: bots[i].x, y: bots[i].y}, newVector);
+            data = checkBoundaries({x: bots[i].x, y: bots[i].y}, newVector);
         }
 
-        collision = checkForCollisions(bots[i], i);
+        //collision = checkForCollisions(bots[i], i);
+        //
+        //if (collision.collided) { // one more chance to reverse the direction
+        //
+        //    randAngle = (collision.angle - randAngle) <= angleVariance ? collision.angle : randAngle;
+        //
+        //    newVector = getVector({x: bots[i].x, y: bots[i].y}, collision.angle, botDefaultSpeed);
+        //    // check again
+        //    data = checkBoundaries({x: bots[i].x, y: bots[i].y}, newVector);
+        //}
 
-        if (collision.collided) { // one more chance to reverse the direction
-            //console.log('botClass:', bots[i].botClass, 'at', bots[i].x, bots[i].y, 'collided at: ', collision.with.curAngle, collision);
-            //debugger;
-            //randAngle = (randAngle + 180) % 360;
-            randAngle = (collision.angle - randAngle) <= angleVariance ? collision.angle : randAngle;
-            newVector = getVector({x: bots[i].x, y: bots[i].y}, collision.angle, botDefaultSpeed);
-            // check again
-            okToMove = checkBoundaries({x: bots[i].x, y: bots[i].y}, newVector);
-        }
-
-        if(okToMove){
+        if(!data){
             bots[i].prevAngle = bots[i].curAngle;
             bots[i].curAngle  = randAngle;
             bots[i].prevX     = bots[i].x;
             bots[i].prevY     = bots[i].y;
             bots[i].x         = newVector[0];
             bots[i].y         = newVector[1];
+            bots[i].lookAtX   = newVector[2];
+            bots[i].lookAtY   = newVector[3];
         }
-
-        //if(Math.abs(bots[i].curAngle - bots[i].prevAngle) > angleVariance){
-        //    console.log(bots[i].prevAngle, bots[i].curAngle, Math.abs(bots[i].curAngle) + Math.abs(bots[i].prevAngle));
-        //    debugger;
-        //}
-
 
         updateDirectionLine(i);
     }
@@ -334,15 +418,19 @@ function drawBoundaries() {
     var line = new PIXI.Graphics();
     line.lineStyle(4, 0xEEEEEE, 1);
     for (var b = 0; b < boundaries.length; b++){
-
+        b && line.beginFill(0x00FF00);
         for (var i = 0; i <= boundaries[b].length; i++) {
+            var lineIndex = i === 0 ? i : i % boundaries[b].length,
+                lineColor = boundaries[b][lineIndex].length === 6 ? boundaries[b][lineIndex][5] : undefined;
+            if(lineColor) line.lineStyle(4, lineColor, 1);
             if(i === 0){
-                line.moveTo(boundaries[b][i][0], boundaries[b][i][1]);
+                line.moveTo(boundaries[b][lineIndex][0], boundaries[b][lineIndex][1]);
             } else {
-                line.lineTo(boundaries[b][i % boundaries[b].length][0], boundaries[b][i % boundaries[b].length][1]);
+                line.lineTo(boundaries[b][lineIndex][0], boundaries[b][lineIndex][1]);
             }
 
         }
+        b && line.endFill();
         stage.addChild(line);
 
     }
@@ -354,7 +442,7 @@ function getRandomDir (angle) {
     angle   = typeof angle !== 'undefined' ? angle : Math.random() * 360;               // -0.5 * 10 = -5deg + 45deg = 40deg
     adjustAngle = (Math.random() - 0.5) * angleVariance;              //  0.5 * 10 =  5deg + 45deg = 50deg
     angle += adjustAngle;
-    //console.log(angle);
+
     return angle;
 }
 
@@ -391,18 +479,21 @@ function makeBot (texture, botClass) {
     addDirectionLine(sprite);
 }
 
-function getVector (coord, angle, speed, noLookAhead) {
-    var result = [];
-    speed = typeof speed !== 'undefined' ? speed : botDefaultSpeed;
+function getVector (coord, angle, radius) {
+    var result = [], tmpX, tmpY, tmpSpeed;
+    radius      = typeof radius !== 'undefined' ? radius : botDefaultSpeed;
     //angle = angle * Math.PI / 180; // if you're using degrees instead of radians
 
-    result.push(speed * Math.cos(angle * (Math.PI / 180)) + coord.x);
-    result.push((speed * Math.sin(angle * (Math.PI / 180)) + coord.y) * gravity);
+    tmpX = radius * Math.cos(angle * (Math.PI / 180)) + coord.x;
+    tmpY = radius * gravity * Math.sin(angle * (Math.PI / 180)) + coord.y;
 
-    if(!noLookAhead) {
-        result.push((speed * lookAhead) * Math.cos(angle * (Math.PI / 180)) + coord.x);
-        result.push((speed * lookAhead) * Math.sin(angle * (Math.PI / 180)) + coord.y);
-    }
+    result = [
+        tmpX,                       // x
+        tmpY,                       // y
+        lookAhead + tmpX,           // x normal
+        lookAhead + tmpY,           // y normal
+        angle                       // normal angle,
+    ];
 
     return result;
 }
